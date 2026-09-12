@@ -1,6 +1,6 @@
-import { inngest } from '@/lib/inngest.js';
-import { prisma } from '@/lib/db.js';
-import { refundEscrowFunds } from '@/lib/ledger.js';
+import { inngest } from '@/lib/inngest';
+import { prisma } from '@/lib/db';
+import { refundEscrowFunds } from '@/lib/ledger';
 
 export const escrowTimeoutRefund = inngest.createFunction(
   { id: 'escrow-timeout-refund', name: 'Escrow Timeout Refund' },

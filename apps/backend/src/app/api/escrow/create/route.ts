@@ -1,16 +1,16 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth.js';
-import { prisma } from '@/lib/db.js';
-import { withIdempotency } from '@/lib/idempotency.js';
-import { reserveEscrowFunds } from '@/lib/ledger.js';
-import { inngest } from '@/lib/inngest.js';
+import { authOptions } from '@/lib/auth';
+import { prisma } from '@/lib/db';
+import { withIdempotency } from '@/lib/idempotency';
+import { reserveEscrowFunds } from '@/lib/ledger';
+import { inngest } from '@/lib/inngest';
 import { z } from 'zod';
 
 const createEscrowSchema = z.object({
   title: z.string().min(3, 'Title must be at least 3 characters'),
   priceCents: z.number().int().positive('Price must be positive'),
-  sellerId: z.string().min(1, 'Seller ID is required'),
+  sellerIdentifier: z.string().min(1, 'Seller identifier is required'),
 });
 
 async function handler(request) {
@@ -23,8 +23,19 @@ async function handler(request) {
 
     const idempotencyKey = request.headers.get('idempotency-key');
     const body = await request.json();
-    const { title, priceCents, sellerId } = createEscrowSchema.parse(body);
+    const { title, priceCents, sellerIdentifier } = createEscrowSchema.parse(body);
     const buyerId = session.user.id;
+
+    // Lookup seller by email
+    const seller = await prisma.user.findUnique({
+      where: { email: sellerIdentifier }
+    });
+
+    if (!seller) {
+      return NextResponse.json({ message: 'Seller not found' }, { status: 404 });
+    }
+
+    const sellerId = seller.id;
 
     if (buyerId === sellerId) {
       return NextResponse.json({ message: 'Cannot create escrow with yourself' }, { status: 400 });

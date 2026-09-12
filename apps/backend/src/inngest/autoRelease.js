@@ -1,6 +1,6 @@
-import { inngest } from '@/lib/inngest.js';
-import { prisma } from '@/lib/db.js';
-import { releaseEscrowFunds } from '@/lib/ledger.js';
+import { inngest } from '@/lib/inngest';
+import { prisma } from '@/lib/db';
+import { releaseEscrowFunds } from '@/lib/ledger';
 
 export const escrowAutoRelease = inngest.createFunction(
   { id: 'escrow-auto-release', name: 'Escrow Auto-Release' },

@@ -15,7 +15,10 @@
   },
   "devDependencies": {
     "@types/json5": "^0.0.30",
-    "turbo": "^1.10.12"
+    "@types/node": "^22.20.2",
+    "@types/react": "^19.3.0",
+    "turbo": "^1.10.12",
+    "typescript": "^7.0.2"
   },
   "packageManager": "npm@9.5.0",
   "workspaces": [

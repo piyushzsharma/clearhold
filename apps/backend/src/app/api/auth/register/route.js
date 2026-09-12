@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { z } from 'zod'
-import { prisma } from '@/lib/db.js'
-import { authRateLimit } from '@/lib/rate-limit.js'
+import { prisma } from '@/lib/db'
+import { authRateLimit } from '@/lib/rate-limit'
 
 const registerSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
@@ -57,9 +57,22 @@ export async function POST(request) {
       await tx.wallet.create({
         data: {
           userId: newUser.id,
-          balance: role === 'CLIENT' ? 1000 : 0, // Give clients $1000 starting balance
         },
       })
+
+      // Give clients $1000 starting balance using double-entry ledger
+      if (role === 'CLIENT') {
+        await tx.ledgerEntry.create({
+          data: {
+            accountId: newUser.id,
+            entryType: 'CREDIT',
+            amountCents: 100000, // $1000 in cents
+            balanceBucket: 'AVAILABLE',
+            reason: 'INITIAL_FUNDING',
+            idempotencyKey: `init_funding_${newUser.id}`,
+          }
+        })
+      }
 
       return newUser
     })
@@ -86,7 +99,7 @@ export async function POST(request) {
 
     console.error('Registration error:', error)
     return NextResponse.json(
-      { message: 'Internal server error' },
+      { message: 'Internal server error', error: String(error.message), stack: String(error.stack) },
       { status: 500 }
     )
   }

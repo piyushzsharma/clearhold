@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth.js';
-import { prisma } from '@/lib/db.js';
-import { withIdempotency } from '@/lib/idempotency.js';
-import { releaseEscrowFunds, refundEscrowFunds, partialRefundEscrowFunds } from '@/lib/ledger.js';
+import { authOptions } from '@/lib/auth';
+import { prisma } from '@/lib/db';
+import { withIdempotency } from '@/lib/idempotency';
+import { releaseEscrowFunds, refundEscrowFunds, partialRefundEscrowFunds } from '@/lib/ledger';
 import { z } from 'zod';
 
 const resolveSchema = z.object({
