@@ -1,0 +1,210 @@
+
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?
+  role          Role      @default(CLIENT)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts      Account[]
+  sessions      Session[]
+  wallet        Wallet?
+  sentTransfers     Transaction[] @relation("SenderTransactions")
+  receivedTransfers Transaction[] @relation("ReceiverTransactions")
+
+  ledgerEntries     LedgerEntry[]
+  buyerEscrows      EscrowTransaction[] @relation("BuyerEscrows")
+  sellerEscrows     EscrowTransaction[] @relation("SellerEscrows")
+  escrowEvents      EscrowEvent[]
+  escrowMessages    EscrowMessage[]
+
+  @@map("users")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Wallet {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("wallets")
+}
+
+model Transaction {
+  id          String            @id @default(cuid())
+  senderId    String
+  receiverId  String
+  amount      Decimal           @db.Decimal(10, 2)
+  type        TransactionType
+  status      TransactionStatus @default(PENDING)
+  description String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  sender   User @relation("SenderTransactions", fields: [senderId], references: [id])
+  receiver User @relation("ReceiverTransactions", fields: [receiverId], references: [id])
+  ledgerEntries LedgerEntry[]
+
+  @@map("transactions")
+}
+
+enum Role {
+  CLIENT
+  MERCHANT
+}
+
+enum TransactionType {
+  P2P_TRANSFER
+  MERCHANT_PAYMENT
+  WALLET_TOPUP
+  WALLET_WITHDRAWAL
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum EntryType {
+  DEBIT
+  CREDIT
+}
+
+enum BalanceBucket {
+  AVAILABLE
+  HELD
+}
+
+enum EscrowStatus {
+  CREATED
+  AWAITING_CREDENTIALS
+  VERIFICATION_WINDOW
+  DISPUTED
+  FROZEN
+  RELEASED
+  AUTO_RELEASED
+  REFUNDED
+  PARTIAL_REFUND
+}
+
+model LedgerEntry {
+  id              String   @id @default(cuid())
+  escrowId        String?  
+  transactionId   String?
+  accountId       String   
+  entryType       EntryType
+  amountCents     BigInt
+  balanceBucket   BalanceBucket
+  reason          String
+  idempotencyKey  String   @unique
+  createdAt       DateTime @default(now())
+
+  account         User     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  escrow          EscrowTransaction? @relation(fields: [escrowId], references: [id])
+  transaction     Transaction? @relation(fields: [transactionId], references: [id])
+
+  @@map("ledger_entries")
+}
+
+model EscrowTransaction {
+  id                   String   @id @default(cuid())
+  title                String
+  priceCents           BigInt
+  buyerId              String
+  sellerId             String
+  status               EscrowStatus @default(CREATED)
+  createdAt            DateTime @default(now())
+  verificationDeadline DateTime?
+  wrappedCredentialKey String?  @db.Text
+  encryptedCredentials String?  @db.Text
+  version              Int      @default(0)
+
+  buyer                User     @relation("BuyerEscrows", fields: [buyerId], references: [id])
+  seller               User     @relation("SellerEscrows", fields: [sellerId], references: [id])
+  ledgerEntries        LedgerEntry[]
+  events               EscrowEvent[]
+  messages             EscrowMessage[]
+
+  @@map("escrow_transactions")
+}
+
+model EscrowEvent {
+  id          String   @id @default(cuid())
+  escrowId    String
+  type        String
+  actorId     String
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  escrow      EscrowTransaction @relation(fields: [escrowId], references: [id], onDelete: Cascade)
+  actor       User              @relation(fields: [actorId], references: [id])
+
+  @@map("escrow_events")
+}
+
+model EscrowMessage {
+  id          String   @id @default(cuid())
+  escrowId    String
+  senderId    String
+  // Encrypted at rest (server-side, not E2E)
+  content     String   @db.Text 
+  createdAt   DateTime @default(now())
+
+  escrow      EscrowTransaction @relation(fields: [escrowId], references: [id], onDelete: Cascade)
+  sender      User              @relation(fields: [senderId], references: [id])
+
+  @@map("escrow_messages")
+}

@@ -1,0 +1,307 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222.2 84% 4.9%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222.2 84% 4.9%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 1rem;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 84% 4.9%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 94.1%;
+  }
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+  body {
+    background: linear-gradient(135deg, #a8edea 0%, #fed6e3 25%, #a8e6cf 50%, #dcd9ff 75%, #c5e3f6 100%);
+    background-attachment: fixed;
+    color: hsl(var(--foreground));
+    min-height: 100vh;
+    position: relative;
+    overflow-x: hidden;
+  }
+  
+  /* Animated watery background */
+  body::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: 
+      radial-gradient(circle at 20% 50%, rgba(168, 237, 234, 0.3) 0%, transparent 50%),
+      radial-gradient(circle at 80% 80%, rgba(254, 214, 227, 0.3) 0%, transparent 50%),
+      radial-gradient(circle at 40% 20%, rgba(168, 230, 207, 0.3) 0%, transparent 50%),
+      radial-gradient(circle at 60% 90%, rgba(220, 217, 255, 0.3) 0%, transparent 50%);
+    animation: float 20s ease-in-out infinite;
+    pointer-events: none;
+    z-index: 0;
+  }
+  
+  /* Floating bubbles effect - Enhanced */
+  body::after {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: 
+      radial-gradient(circle, rgba(255, 255, 255, 0.6) 2px, transparent 2px),
+      radial-gradient(circle, rgba(255, 255, 255, 0.5) 3px, transparent 3px),
+      radial-gradient(circle, rgba(255, 255, 255, 0.4) 4px, transparent 4px),
+      radial-gradient(circle, rgba(168, 237, 234, 0.3) 5px, transparent 5px),
+      radial-gradient(circle, rgba(254, 214, 227, 0.3) 6px, transparent 6px),
+      radial-gradient(circle, rgba(220, 217, 255, 0.3) 4px, transparent 4px),
+      radial-gradient(circle, rgba(255, 255, 255, 0.3) 2px, transparent 2px),
+      radial-gradient(circle, rgba(255, 255, 255, 0.2) 1px, transparent 1px);
+    background-size: 80px 80px, 120px 120px, 150px 150px, 200px 200px, 180px 180px, 160px 160px, 90px 90px, 60px 60px;
+    background-position: 0 0, 40px 60px, 130px 270px, 50px 150px, 200px 50px, 300px 200px, 20px 100px, 250px 300px;
+    animation: bubble-float 25s linear infinite;
+    pointer-events: none;
+    z-index: 0;
+  }
+  
+  @keyframes float {
+    0%, 100% {
+      transform: translate(0, 0) scale(1);
+    }
+    33% {
+      transform: translate(30px, -30px) scale(1.1);
+    }
+    66% {
+      transform: translate(-20px, 20px) scale(0.9);
+    }
+  }
+  
+  @keyframes bubble-float {
+    0% {
+      transform: translateY(0);
+    }
+    100% {
+      transform: translateY(-100px);
+    }
+  }
+}
+
+@layer utilities {
+  /* Glassmorphic card styles */
+  .glass-card {
+    background: rgba(255, 255, 255, 0.25);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
+  }
+  
+  .glass-card-strong {
+    background: rgba(255, 255, 255, 0.35);
+    backdrop-filter: blur(25px);
+    -webkit-backdrop-filter: blur(25px);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.2);
+  }
+  
+  .glass-button {
+    background: rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    transition: all 0.3s ease;
+  }
+  
+  .glass-button:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px 0 rgba(31, 38, 135, 0.2);
+  }
+  
+  .glass-input {
+    background: rgba(255, 255, 255, 0.3);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+  }
+  
+  .glass-input:focus {
+    background: rgba(255, 255, 255, 0.4);
+    border-color: rgba(255, 255, 255, 0.6);
+  }
+  
+  /* Watery wave decoration */
+  .wave-decoration {
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .wave-decoration::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 200%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    animation: wave-slide 3s ease-in-out infinite;
+  }
+  
+  @keyframes wave-slide {
+    0% {
+      left: -100%;
+    }
+    50% {
+      left: 100%;
+    }
+    100% {
+      left: 100%;
+    }
+  }
+  
+  /* Card popup animation */
+  @keyframes cardPopup {
+    0% {
+      opacity: 0;
+      transform: scale(0.5) translateY(100px) rotate(10deg);
+    }
+    60% {
+      transform: scale(1.05) translateY(-10px) rotate(-2deg);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1) translateY(0) rotate(0deg);
+    }
+  }
+  
+  .animate-cardPopup {
+    animation: cardPopup 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  }
+  
+  /* Fade in animation */
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  
+  .animate-fadeIn {
+    animation: fadeIn 0.3s ease-out forwards;
+  }
+  
+  /* Floating bubbles in background - Additional layer */
+  .bubble-layer {
+    position: fixed;
+    width: 100%;
+    height: 100%;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+    z-index: 1;
+  }
+  
+  .bubble {
+    position: absolute;
+    border-radius: 50%;
+    background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0.2));
+    box-shadow: inset 0 0 20px rgba(255, 255, 255, 0.5);
+    animation: float-bubble 15s infinite ease-in-out;
+  }
+  
+  @keyframes float-bubble {
+    0%, 100% {
+      transform: translateY(0) translateX(0) scale(1);
+      opacity: 0.6;
+    }
+    25% {
+      transform: translateY(-100px) translateX(50px) scale(1.1);
+      opacity: 0.8;
+    }
+    50% {
+      transform: translateY(-200px) translateX(-30px) scale(0.9);
+      opacity: 0.5;
+    }
+    75% {
+      transform: translateY(-100px) translateX(70px) scale(1.05);
+      opacity: 0.7;
+    }
+  }
+  
+  /* Perspective for 3D transforms */
+  .perspective-1000 {
+    perspective: 1000px;
+  }
+  
+  /* Credit card realistic effects */
+  .credit-card {
+    box-shadow: 
+      0 10px 40px rgba(0, 0, 0, 0.3),
+      0 2px 8px rgba(0, 0, 0, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    transform-style: preserve-3d;
+  }
+  
+  .credit-card:hover {
+    box-shadow: 
+      0 15px 50px rgba(0, 0, 0, 0.4),
+      0 5px 15px rgba(0, 0, 0, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  }
+  
+  /* Holographic shimmer effect */
+  @keyframes shimmer {
+    0% {
+      transform: translateX(-100%) skewX(-15deg);
+    }
+    100% {
+      transform: translateX(200%) skewX(-15deg);
+    }
+  }
+  
+  .animate-shimmer {
+    animation: shimmer 3s infinite;
+  }
+}

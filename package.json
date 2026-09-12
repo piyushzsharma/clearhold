@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "payment-app",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "cd apps/frontend && npm install && next build",
+    "dev": "turbo run dev",
+    "start": "cd apps/frontend && next start -p $PORT",
+    "lint": "turbo run lint",
+    "clean": "turbo run clean",
+    "db:generate": "turbo run db:generate",
+    "db:push": "turbo run db:push",
+    "db:seed": "turbo run db:seed"
+  },
+  "devDependencies": {
+    "@types/json5": "^0.0.30",
+    "turbo": "^1.10.12"
+  },
+  "packageManager": "npm@9.5.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ]
+}
