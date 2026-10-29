@@ -9,16 +9,25 @@ class ApiClient {
 
   async request(endpoint: string, options: any = {}) {
     const url = `${this.baseURL}${endpoint}`
-    
+    const { headers: suppliedHeaders = {}, ...requestOptions } = options
+    const headers = new Headers(suppliedHeaders)
+    if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
+    if (requestOptions.method && !['GET', 'HEAD'].includes(requestOptions.method.toUpperCase()) && !headers.has('Idempotency-Key')) {
+      headers.set('Idempotency-Key', crypto.randomUUID())
+    }
     const config = {
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-      ...options,
+      ...requestOptions,
+      headers,
     }
 
-    const response = await fetch(url, config)
+    let response: Response
+    try {
+      response = await fetch(url, config)
+    } catch (networkError) {
+      if (!headers.has('Idempotency-Key')) throw networkError
+      // Reuse the exact same request and key after an ambiguous network failure.
+      response = await fetch(url, config)
+    }
     
     if (!response.ok) {
       const error = await response.json().catch(() => ({ message: 'Unknown error' }))
@@ -36,16 +45,9 @@ class ApiClient {
     })
   }
 
-  // Wallet endpoints
+  // Escrow financial endpoints
   async getBalance() {
-    return this.request('/api/wallet/balance')
-  }
-
-  async transfer(data: any) {
-    return this.request('/api/wallet/transfer', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    })
+    return this.request('/api/escrow/balance')
   }
 
   // Escrow endpoints
@@ -86,7 +88,7 @@ class ApiClient {
     })
   }
 
-  async disputeEscrow(id: string, data: { reason: string }) {
+  async disputeEscrow(id: string, data: { reasonCode: string; notes: string }) {
     return this.request(`/api/escrow/${id}/dispute`, {
       method: 'POST',
       body: JSON.stringify(data),
@@ -104,7 +106,7 @@ class ApiClient {
     return this.request(`/api/admin/escrow${query ? `?${query}` : ''}`)
   }
 
-  async resolveDispute(id: string, data: { resolution: 'RELEASE' | 'REFUND' | 'PARTIAL_REFUND'; amountCents?: number }) {
+  async resolveDispute(id: string, data: { expectedVersion: number; resolutionAction: 'RELEASE' | 'REFUND' | 'PARTIAL_REFUND'; reasonCode: 'PLATFORM_RULING'; notes: string; refundAmountCents?: number }) {
     return this.request(`/api/admin/escrow/${id}/resolve`, {
       method: 'POST',
       body: JSON.stringify(data),

@@ -1,12 +1,16 @@
 import { inngest } from '@/lib/inngest';
 import { prisma } from '@/lib/db';
 import { releaseEscrowFunds } from '@/lib/ledger';
+import { lockEscrow, transitionEscrow } from '@/lib/escrow-state-machine';
 
 export const escrowAutoRelease = inngest.createFunction(
-  { id: 'escrow-auto-release', name: 'Escrow Auto-Release' },
-  { event: 'escrow/credentials.submitted' },
+  {
+    id: 'escrow-auto-release',
+    name: 'Escrow Auto-Release',
+    triggers: { event: 'escrow/credentials.submitted' },
+  },
   async ({ event, step }) => {
-    const { escrowId, sellerId } = event.data;
+    const { escrowId } = event.data;
 
     // Wait for exactly 24 hours
     // During this time, Inngest gracefully handles server restarts and deployments.
@@ -15,13 +19,7 @@ export const escrowAutoRelease = inngest.createFunction(
     // After 24 hours, attempt to release the funds if it hasn't been disputed or already released.
     await step.run('attempt-auto-release', async () => {
       await prisma.$transaction(async (tx) => {
-        // Lock row
-        const escrowRows = await tx.$queryRaw`
-          SELECT status, "buyerId", "sellerId", "priceCents" FROM escrow_transactions WHERE id = ${escrowId} FOR UPDATE
-        `;
-        
-        if (!escrowRows || escrowRows.length === 0) return;
-        const escrow = escrowRows[0];
+        const escrow = await lockEscrow(tx, escrowId);
 
         // If not in VERIFICATION_WINDOW, it means it was disputed or already released/resolved.
         if (escrow.status !== 'VERIFICATION_WINDOW') {
@@ -37,22 +35,11 @@ export const escrowAutoRelease = inngest.createFunction(
           idempotencyKeyPrefix: `inngest_auto_release:${escrowId}`,
         });
 
-        // Update status and shred DEK
-        await tx.escrowTransaction.update({
-          where: { id: escrowId },
-          data: {
-            status: 'AUTO_RELEASED',
-            wrappedCredentialKey: null,
-          }
-        });
-
-        // Log event
-        await tx.escrowEvent.create({
-          data: {
-            escrowId,
-            type: 'AutoReleased',
-            actorId: 'SYSTEM',
-          }
+        await transitionEscrow(tx, {
+          escrow,
+          transition: 'AUTO_RELEASE',
+          actor: { type: 'SYSTEM' },
+          metadata: { source: 'inngest' },
         });
 
         return { released: true };

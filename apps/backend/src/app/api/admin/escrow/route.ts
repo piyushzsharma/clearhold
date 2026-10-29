@@ -1,21 +1,16 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { withAuthorization } from '@/lib/authorization';
+import { z } from 'zod';
 
-export async function GET(req: Request) {
+async function handler(req: Request) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id || session.user.role !== 'admin') {
-      return NextResponse.json({ error: 'Forbidden: Admin access required' }, { status: 403 });
-    }
-
     const { searchParams } = new URL(req.url);
     const cursor = searchParams.get('cursor');
-    const limit = parseInt(searchParams.get('limit') || '20');
-    const status = searchParams.get('status'); // Optional filter
+    const limit = Math.min(Math.max(Number(searchParams.get('limit') || 20) || 20, 1), 100);
+    const status = z.enum(['DISPUTED', 'RELEASED', 'REFUNDED', 'PARTIAL_REFUND']).nullable().parse(searchParams.get('status'));
 
-    const whereClause: any = {};
+    const whereClause: any = { status: 'DISPUTED' };
     if (status) {
       whereClause.status = status;
     }
@@ -29,13 +24,15 @@ export async function GET(req: Request) {
         id: true,
         priceCents: true,
         status: true,
+        version: true,
         verificationDeadline: true,
         createdAt: true,
         title: true,
         buyerId: true,
         sellerId: true,
         buyer: { select: { name: true, id: true, email: true } },
-        seller: { select: { name: true, id: true, email: true } }
+        seller: { select: { name: true, id: true, email: true } },
+        events: { select: { type: true, metadata: true, createdAt: true, actor: { select: { name: true, email: true } } }, orderBy: { createdAt: 'desc' } },
       }
     });
 
@@ -56,3 +53,5 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
+
+export const GET = withAuthorization(handler, { platformRoles: ['ADMIN'] });

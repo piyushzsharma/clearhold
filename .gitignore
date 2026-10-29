@@ -18,6 +18,7 @@ dist/
 .env
 .env*.local
 .env.production
+.env.deploy
 
 # Debug
 npm-debug.log*
@@ -32,11 +33,19 @@ yarn-error.log*
 .DS_Store
 Thumbs.db
 
-# Prisma
-prisma/migrations/
-
 # Turbo
 .turbo/
 
+# TypeScript incremental build metadata
+*.tsbuildinfo
+.test-dist/
+.ledger-test-dist/
+.state-test-dist/
+.idempotency-test-dist/
+.reconciliation-test-dist/
+.local-postgres/
+
 # Logs
 *.log
+#personal md files
+CODEX_CONTEXT.md

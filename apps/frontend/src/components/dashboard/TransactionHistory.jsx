@@ -13,7 +13,7 @@ export function TransactionHistory({ limit = 5, showHeader = true, onRefresh }) 
 
   const fetchTransactions = async () => {
     try {
-      const response = await fetch(`/api/transactions?limit=${limit}`)
+      const response = await fetch(`/api/legacy/transfers?limit=${limit}`)
       if (response.ok) {
         const data = await response.json()
         setTransactions(data.transactions)

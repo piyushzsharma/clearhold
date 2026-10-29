@@ -1,16 +1,15 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { withAuthorization } from '@/lib/authorization';
+import type { Principal } from '@/lib/authorization-policy';
 
-export async function GET(req: Request, { params }: { params: { id: string } }) {
+async function handler(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> },
+  principal: Principal,
+) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const { id } = params;
+    const { id } = await params;
 
     const escrow = await prisma.escrowTransaction.findUnique({
       where: { id },
@@ -39,9 +38,9 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
 
     // Security check: Must be buyer, seller, or admin
     if (
-      escrow.buyerId !== session.user.id &&
-      escrow.sellerId !== session.user.id &&
-      session.user.role !== 'admin'
+      escrow.buyerId !== principal.id &&
+      escrow.sellerId !== principal.id &&
+      principal.platformRole !== 'ADMIN'
     ) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
@@ -57,3 +56,5 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
+
+export const GET = withAuthorization(handler);

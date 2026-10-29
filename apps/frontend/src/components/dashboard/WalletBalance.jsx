@@ -13,7 +13,7 @@ export function WalletBalance({ onRefresh }) {
 
   const fetchBalance = async () => {
     try {
-      const response = await fetch('/api/wallet/balance')
+      const response = await fetch('/api/legacy/wallet')
       if (response.ok) {
         const data = await response.json()
         setBalance(parseFloat(data.balance).toFixed(2))

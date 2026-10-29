@@ -1,15 +1,15 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { getSession } from 'next-auth/react'
 import apiClient from '../../../../lib/api'
 import { CredentialSubmit } from '../../../../components/v0/CredentialSubmit'
 import { VerificationView } from '../../../../components/v0/VerificationView'
 
-export default function EscrowDetailsPage({ params }: { params: { id: string } }) {
+export default function EscrowDetailsPage() {
   const router = useRouter()
-  const { id } = params
+  const { id } = useParams<{ id: string }>()
   
   const [session, setSession] = useState<any>(null)
   const [escrow, setEscrow] = useState<any>(null)
@@ -52,7 +52,7 @@ export default function EscrowDetailsPage({ params }: { params: { id: string } }
 
   // --- Seller Handlers ---
   const handleSellerSubmit = async (creds: string) => {
-    await apiClient.submitCredentials(id, { encryptedCredentials: creds })
+    await apiClient.submitCredentials(id, { credentialsPlaintext: creds })
     // Reload escrow state after submission
     const data = await apiClient.getEscrow(id)
     setEscrow(data.escrow)
@@ -62,7 +62,7 @@ export default function EscrowDetailsPage({ params }: { params: { id: string } }
   const handleReveal = async () => {
     try {
       const data = await apiClient.getCredentials(id)
-      setCredentials(data.encryptedCredentials)
+      setCredentials(data.credentials)
     } catch (err: any) {
       alert(err.message || "Failed to reveal credentials")
     }
@@ -81,7 +81,7 @@ export default function EscrowDetailsPage({ params }: { params: { id: string } }
 
   const handleOpenDispute = async (reason: string, notes: string) => {
     try {
-      await apiClient.disputeEscrow(id, { reason })
+      await apiClient.disputeEscrow(id, { reasonCode: reason, notes })
       const data = await apiClient.getEscrow(id)
       setEscrow(data.escrow)
       alert("Dispute opened. An admin will review it.")
@@ -91,6 +91,9 @@ export default function EscrowDetailsPage({ params }: { params: { id: string } }
   }
 
   if (isSeller) {
+    if (escrow.status !== 'AWAITING_CREDENTIALS') {
+      return <main className="details-page"><div className="details-container"><a href="/escrow">← Back to escrows</a><h1>{escrow.title}</h1><p>Status: {escrow.status.replaceAll('_', ' ')}</p><p>Credentials can only be submitted while this trade is awaiting delivery.</p></div></main>
+    }
     const sellerProps = {
       id: escrow.id,
       title: escrow.title,
@@ -99,10 +102,13 @@ export default function EscrowDetailsPage({ params }: { params: { id: string } }
       createdAt: escrow.createdAt
     }
     // TODO: implement chat fetching/sending
-    return <CredentialSubmit escrow={sellerProps} onSubmit={handleSellerSubmit} messages={[]} onSendMessage={() => {}} />
+    return <CredentialSubmit escrow={sellerProps} onSubmit={handleSellerSubmit} />
   }
 
   if (isBuyer) {
+    if (escrow.status !== 'VERIFICATION_WINDOW') {
+      return <main className="details-page"><div className="details-container"><a href="/escrow">← Back to escrows</a><h1>{escrow.title}</h1><p>Status: {escrow.status.replaceAll('_', ' ')}</p><p>{escrow.status === 'AWAITING_CREDENTIALS' ? 'Waiting for the seller to submit credentials.' : 'This escrow is no longer in the verification window.'}</p></div></main>
+    }
     const buyerProps = {
       id: escrow.id,
       title: escrow.title,
@@ -115,7 +121,6 @@ export default function EscrowDetailsPage({ params }: { params: { id: string } }
         escrow={buyerProps}
         credentials={credentials}
         onReveal={handleReveal}
-        viewCount={1}
         onConfirmRelease={handleConfirmRelease}
         onOpenDispute={handleOpenDispute}
       />

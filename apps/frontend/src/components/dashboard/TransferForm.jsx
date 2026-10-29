@@ -38,10 +38,11 @@ export function TransferForm({ onTransferComplete }) {
   const onSubmit = async (data) => {
     setLoading(true)
     try {
-      const response = await fetch('/api/wallet/transfer', {
+      const response = await fetch('/api/legacy/transfers', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Idempotency-Key': crypto.randomUUID(),
         },
         body: JSON.stringify(data),
       })

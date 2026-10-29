@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from 'next';
 import './escrow-globals.css';
 import { ToastProvider } from '@/components/v0/ui/toast';
+import { Providers } from '@/components/Providers';
+import { PlatformBoundary } from '@/components/auth/PlatformBoundary';
 
 export const metadata: Metadata = {
   title: 'ClearHold | Escrow dashboard',
@@ -17,7 +19,11 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en" className="bg-background">
       <body className="antialiased">
-        <ToastProvider>{children}</ToastProvider>
+        <Providers>
+          <PlatformBoundary>
+            <ToastProvider>{children}</ToastProvider>
+          </PlatformBoundary>
+        </Providers>
       </body>
     </html>
   );

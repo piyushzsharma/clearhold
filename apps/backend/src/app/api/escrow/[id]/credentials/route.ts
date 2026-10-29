@@ -1,22 +1,18 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { envelopeDecrypt } from '@/lib/crypto';
+import { withAuthorization } from '@/lib/authorization';
+import type { Principal } from '@/lib/authorization-policy';
+import { EscrowNotFoundError, lockEscrow } from '@/lib/escrow-state-machine';
 
-export async function GET(request, { params }) {
+async function handler(request: Request, { params }: { params: Promise<{ id: string }> }, principal: Principal) {
   try {
-    const session = await getServerSession(authOptions);
-    
-    if (!session?.user?.id) {
-      return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
-    }
+    const { id: escrowId } = await params;
+    const buyerId = principal.id;
 
-    const { id: escrowId } = params;
-    const buyerId = session.user.id;
-
-    // Use a transaction to ensure we only log the access if we actually serve the credentials
+    // Lock the row so settlement cannot delete the wrapped key while access is audited.
     const credentials = await prisma.$transaction(async (tx) => {
+      await lockEscrow(tx, escrowId);
       const escrow = await tx.escrowTransaction.findUnique({
         where: { id: escrowId }
       });
@@ -33,31 +29,34 @@ export async function GET(request, { params }) {
         throw new Error(`Invalid state: Credentials can only be accessed during the verification window. Current status: ${escrow.status}`);
       }
 
+      if (!escrow.verificationDeadline || escrow.verificationDeadline <= new Date()) {
+        throw new Error('Invalid state: Credential verification window has expired');
+      }
+
       if (!escrow.encryptedCredentials || !escrow.wrappedCredentialKey) {
         throw new Error('Credentials are missing or have been cryptographically shredded');
       }
 
       // Decrypt credentials
-      const plaintext = envelopeDecrypt(escrow.encryptedCredentials, escrow.wrappedCredentialKey);
+      const plaintext = envelopeDecrypt(escrow.encryptedCredentials, escrow.wrappedCredentialKey, escrowId);
 
       // Write an audit log that the buyer viewed the credentials
-      const ip = request.headers.get('x-forwarded-for')?.split(',')[0].trim() || 'unknown';
-      
       await tx.escrowEvent.create({
         data: {
           escrowId,
           type: 'CredentialAccessed',
           actorId: buyerId,
-          metadata: { ip },
+          metadata: { access: 'buyer-read' },
         }
       });
 
       return plaintext;
     });
 
-    return NextResponse.json({ credentials: credentials });
+    return NextResponse.json({ credentials }, { headers: { 'Cache-Control': 'no-store' } });
 
   } catch (error) {
+    if (error instanceof EscrowNotFoundError) return NextResponse.json({ message: error.message }, { status: 404 });
     if (error instanceof Error) {
       if (error.message.startsWith('Unauthorized')) {
         return NextResponse.json({ message: error.message }, { status: 403 });
@@ -73,3 +72,5 @@ export async function GET(request, { params }) {
     return NextResponse.json({ message: 'Internal server error' }, { status: 500 });
   }
 }
+
+export const GET = withAuthorization(handler, { platformRoles: ['USER'] });

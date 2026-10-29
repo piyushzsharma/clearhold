@@ -1,9 +1,17 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/db';
-import { withIdempotency } from '@/lib/idempotency';
+import { executeIdempotentCommand, idempotencyErrorResponse } from '@/lib/idempotency';
+import { withAuthorization } from '@/lib/authorization';
+import { AuthorizationError, type Principal } from '@/lib/authorization-policy';
 import { releaseEscrowFunds, refundEscrowFunds, partialRefundEscrowFunds } from '@/lib/ledger';
+import {
+  assertEscrowVersion,
+  EscrowNotFoundError,
+  EscrowVersionConflictError,
+  lockEscrow,
+  transitionEscrow,
+} from '@/lib/escrow-state-machine';
+import { InvalidEscrowTransitionError } from '@/lib/escrow-state-policy';
 import { z } from 'zod';
 
 const resolveSchema = z.object({
@@ -14,25 +22,12 @@ const resolveSchema = z.object({
   refundAmountCents: z.number().int().positive().optional(), // Required only for PARTIAL_REFUND
 });
 
-async function handler(request, { params }) {
+async function handler(request: Request, { params }: { params: Promise<{ id: string }> }, principal: Principal) {
   try {
-    const session = await getServerSession(authOptions);
-    
-    // In a real system, you'd check if session.user.role === 'ADMIN' or similar
-    if (!session?.user?.id) {
-      return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
-    }
+    const { id: escrowId } = await params;
+    const adminId = principal.id;
 
-    // Since this is a portfolio project and role management wasn't explicitly modeled in auth,
-    // we assume the caller is authorized if they hit this endpoint, or we'd check their role:
-    const adminUser = await prisma.user.findUnique({ where: { id: session.user.id } });
-    // Assuming we added an 'ADMIN' role to the schema? We didn't. 
-    // We'll just rely on session.user.id being a known admin in a real app.
-
-    const { id: escrowId } = params;
-    const idempotencyKey = request.headers.get('idempotency-key');
-    const adminId = session.user.id;
-
+    const rawBody = await request.clone().text();
     const body = await request.json();
     const { expectedVersion, resolutionAction, reasonCode, notes, refundAmountCents } = resolveSchema.parse(body);
 
@@ -40,28 +35,27 @@ async function handler(request, { params }) {
       return NextResponse.json({ message: 'refundAmountCents is required for PARTIAL_REFUND' }, { status: 400 });
     }
 
-    const result = await prisma.$transaction(async (tx) => {
-      // 1. Lock escrow row
-      const escrowRows = await tx.$queryRaw`
-        SELECT status, version, "buyerId", "sellerId", "priceCents" FROM escrow_transactions WHERE id = ${escrowId} FOR UPDATE
+    const { response } = await executeIdempotentCommand({
+      db: prisma,
+      request,
+      rawBody,
+      principalId: adminId,
+      run: async (tx, journalPrefix) => {
+      // Keep authorization valid for the entire privileged transaction. A concurrent
+      // demotion must wait for this row lock, or be observed before settlement begins.
+      const adminRows = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM users
+        WHERE id = ${adminId} AND "platformRole" = 'ADMIN'
+        FOR SHARE
       `;
-      
-      if (!escrowRows || escrowRows.length === 0) {
-        throw new Error('Escrow not found');
-      }
-      
-      const escrow = escrowRows[0];
 
-      // 2. Optimistic Concurrency Check
-      if (escrow.version !== expectedVersion) {
-        throw new Error(`Concurrency Conflict: Expected version ${expectedVersion} but found ${escrow.version}. Dispute was likely already resolved by another admin.`);
+      if (adminRows.length === 0) {
+        throw new AuthorizationError();
       }
 
-      if (escrow.status !== 'DISPUTED') {
-        throw new Error(`Invalid transition: Cannot resolve from state ${escrow.status}. Must be DISPUTED.`);
-      }
-
-      let nextStatus = '';
+      const escrow = await lockEscrow(tx, escrowId);
+      assertEscrowVersion(escrow, expectedVersion);
+      let transition: 'ADMIN_RELEASE' | 'ADMIN_REFUND' | 'ADMIN_PARTIAL_REFUND';
 
       // 3. Process Ledger Changes
       if (resolutionAction === 'RELEASE') {
@@ -70,17 +64,17 @@ async function handler(request, { params }) {
           sellerId: escrow.sellerId,
           escrowId,
           amountCents: escrow.priceCents,
-          idempotencyKeyPrefix: `admin_resolve_release:${idempotencyKey}`,
+          idempotencyKeyPrefix: journalPrefix,
         });
-        nextStatus = 'RELEASED';
+        transition = 'ADMIN_RELEASE';
       } else if (resolutionAction === 'REFUND') {
         await refundEscrowFunds(tx, {
           buyerId: escrow.buyerId,
           escrowId,
           amountCents: escrow.priceCents,
-          idempotencyKeyPrefix: `admin_resolve_refund:${idempotencyKey}`,
+          idempotencyKeyPrefix: journalPrefix,
         });
-        nextStatus = 'REFUNDED';
+        transition = 'ADMIN_REFUND';
       } else if (resolutionAction === 'PARTIAL_REFUND') {
         await partialRefundEscrowFunds(tx, {
           buyerId: escrow.buyerId,
@@ -88,58 +82,53 @@ async function handler(request, { params }) {
           escrowId,
           totalAmountCents: escrow.priceCents,
           refundAmountCents: BigInt(refundAmountCents),
-          idempotencyKeyPrefix: `admin_resolve_partial:${idempotencyKey}`,
+          idempotencyKeyPrefix: journalPrefix,
         });
-        nextStatus = 'PARTIAL_REFUND';
+        transition = 'ADMIN_PARTIAL_REFUND';
       }
 
-      // 4. Update Escrow Status and Increment Version
-      const updatedEscrow = await tx.escrowTransaction.update({
-        where: { id: escrowId },
-        data: {
-          status: nextStatus,
-          version: { increment: 1 },
-          wrappedCredentialKey: null, // Cryptographic shredding
-        }
+      const updated = await transitionEscrow(tx, {
+        escrow,
+        transition,
+        actor: { type: 'USER', id: adminId },
+        metadata: {
+          reasonCode,
+          notes,
+          expectedVersion,
+          ...(refundAmountCents ? { refundAmountCents } : {}),
+        },
       });
-
-      // 5. Write audit log
-      await tx.escrowEvent.create({
-        data: {
-          escrowId,
-          type: `AdminResolved_${resolutionAction}`,
-          actorId: adminId,
-          metadata: { reasonCode, notes, expectedVersion, refundAmountCents },
-        }
-      });
-
-      return updatedEscrow;
+      return {
+        status: 200,
+        body: { message: 'Dispute resolved successfully', status: updated.status, newVersion: updated.version },
+      };
+      },
     });
 
-    return NextResponse.json({
-      message: 'Dispute resolved successfully',
-      status: result.status,
-      newVersion: result.version,
-    }, { status: 200 });
+    return response;
 
   } catch (error) {
+    const idempotencyError = idempotencyErrorResponse(error);
+    if (idempotencyError) return idempotencyError;
+    if (error instanceof AuthorizationError) {
+      throw error;
+    }
+
     if (error instanceof z.ZodError) {
       return NextResponse.json({ message: 'Invalid input', errors: error.errors }, { status: 400 });
     }
     if (error instanceof Error) {
-      if (error.message.startsWith('Concurrency Conflict') || error.message.startsWith('Invalid transition')) {
-        return NextResponse.json({ message: error.message }, { status: 409 });
-      }
-      if (error.message === 'Escrow not found') {
-        return NextResponse.json({ message: error.message }, { status: 404 });
-      }
       if (error.message.includes('Partial refund must be less')) {
         return NextResponse.json({ message: error.message }, { status: 400 });
       }
     }
+    if (error instanceof EscrowVersionConflictError || error instanceof InvalidEscrowTransitionError) {
+      return NextResponse.json({ message: error.message }, { status: 409 });
+    }
+    if (error instanceof EscrowNotFoundError) return NextResponse.json({ message: error.message }, { status: 404 });
     console.error('Admin resolution error:', error);
     return NextResponse.json({ message: 'Internal server error' }, { status: 500 });
   }
 }
 
-export const POST = withIdempotency(handler);
+export const POST = withAuthorization(handler, { platformRoles: ['ADMIN'] });

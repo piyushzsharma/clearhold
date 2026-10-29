@@ -1,0 +1,64 @@
+name: ClearHold CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: clearhold
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: clearhold
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U clearhold -d clearhold"
+          --health-interval 10s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://clearhold:ci-only-password@localhost:5432/clearhold
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: ci-only-secret-with-more-than-thirty-two-characters
+      MASTER_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      IDEMPOTENCY_HASH_KEY: fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210
+      SCHEDULER_SECRET: ci-only-scheduler-secret-with-more-than-thirty-two-characters
+      BACKEND_URL: http://localhost:3001
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm install --global npm@11.4.2
+      - run: npm ci
+      - run: npm run db:generate
+      - run: npm run db:migrate:deploy
+      - run: npm run verify
+      - run: npm run test:db:ledger --workspace=backend
+      - run: npm run test:db:state --workspace=backend
+      - run: npm run test:db:idempotency --workspace=backend
+      - run: npm run test:db:reconciliation --workspace=backend
+      - run: npm run db:seed
+      - name: HTTP product smoke test
+        env:
+          SMOKE_ADMIN_PASSWORD: ClearHoldDemo123!
+        run: |
+          npm run start:backend > /tmp/clearhold-backend.log 2>&1 &
+          backend_pid=$!
+          npm run start:frontend > /tmp/clearhold-frontend.log 2>&1 &
+          frontend_pid=$!
+          trap 'kill "$backend_pid" "$frontend_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..30}; do
+            if curl -fsS http://localhost:3001/api/health >/dev/null && curl -fsS http://localhost:3000/api/health >/dev/null; then break; fi
+            sleep 2
+          done
+          node scripts/smoke-local.mjs
+      - run: docker build --build-arg BACKEND_URL=http://backend:3001 -t clearhold-ci .

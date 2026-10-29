@@ -1,22 +1,18 @@
 import { NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { z } from 'zod'
+import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { authRateLimit } from '@/lib/rate-limit'
-
-const registerSchema = z.object({
-  name: z.string().min(2, 'Name must be at least 2 characters'),
-  email: z.string().email('Invalid email address'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
-  role: z.enum(['CLIENT', 'MERCHANT']).default('CLIENT'),
-})
+import { publicRegistrationSchema } from '@/lib/registration'
+import { ensureUserLedgerAccounts, issueDemoFunds } from '@/lib/ledger'
 
 export async function POST(request) {
   try {
     const clientIP = request.headers.get('x-forwarded-for')?.split(',')[0].trim() || 'unknown'
     
     // Rate limiting
-    const isAllowed = await authRateLimit(clientIP)
+    const isAllowed = await authRateLimit(`register:ip:${clientIP}`)
     if (!isAllowed) {
       return NextResponse.json(
         { message: 'Too many registration attempts. Please try again later.' },
@@ -25,7 +21,7 @@ export async function POST(request) {
     }
 
     const body = await request.json()
-    const { name, email, password, role } = registerSchema.parse(body)
+    const { name, email, password, role } = publicRegistrationSchema.parse(body)
 
     // Check if user already exists
     const existingUser = await prisma.user.findUnique({
@@ -50,27 +46,24 @@ export async function POST(request) {
           email,
           password: hashedPassword,
           role,
+          platformRole: 'USER',
         },
       })
 
-      // Create wallet for the user
-      await tx.wallet.create({
+      await ensureUserLedgerAccounts(tx, newUser.id)
+
+      await tx.legacyWallet.create({
         data: {
           userId: newUser.id,
+          balanceCents: role === 'CLIENT' ? 100000 : 0,
         },
       })
 
-      // Give clients $1000 starting balance using double-entry ledger
       if (role === 'CLIENT') {
-        await tx.ledgerEntry.create({
-          data: {
-            accountId: newUser.id,
-            entryType: 'CREDIT',
-            amountCents: 100000, // $1000 in cents
-            balanceBucket: 'AVAILABLE',
-            reason: 'INITIAL_FUNDING',
-            idempotencyKey: `init_funding_${newUser.id}`,
-          }
+        await issueDemoFunds(tx, {
+          userId: newUser.id,
+          amountCents: 100_000n,
+          idempotencyKey: `initial-funding:${newUser.id}`,
         })
       }
 
@@ -97,9 +90,16 @@ export async function POST(request) {
       )
     }
 
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      return NextResponse.json(
+        { message: 'User with this email already exists' },
+        { status: 409 },
+      )
+    }
+
     console.error('Registration error:', error)
     return NextResponse.json(
-      { message: 'Internal server error', error: String(error.message), stack: String(error.stack) },
+      { message: 'Internal server error' },
       { status: 500 }
     )
   }

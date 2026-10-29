@@ -1,5 +1,3 @@
-
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -37,27 +35,28 @@ model Session {
 }
 
 model User {
-  id            String    @id @default(cuid())
+  id            String       @id @default(cuid())
   name          String?
-  email         String    @unique
+  email         String       @unique
   emailVerified DateTime?
   image         String?
   password      String?
-  role          Role      @default(CLIENT)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  role          Role         @default(CLIENT)
+  platformRole  PlatformRole @default(USER)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
 
-  accounts      Account[]
-  sessions      Session[]
-  wallet        Wallet?
-  sentTransfers     Transaction[] @relation("SenderTransactions")
-  receivedTransfers Transaction[] @relation("ReceiverTransactions")
+  accounts               Account[]
+  sessions               Session[]
+  legacyWallet           LegacyWallet?
+  sentLegacyPayments     Transaction[] @relation("SenderTransactions")
+  receivedLegacyPayments Transaction[] @relation("ReceiverTransactions")
 
-  ledgerEntries     LedgerEntry[]
-  buyerEscrows      EscrowTransaction[] @relation("BuyerEscrows")
-  sellerEscrows     EscrowTransaction[] @relation("SellerEscrows")
-  escrowEvents      EscrowEvent[]
-  escrowMessages    EscrowMessage[]
+  ledgerAccounts LedgerAccount[]
+  buyerEscrows   EscrowTransaction[] @relation("BuyerEscrows")
+  sellerEscrows  EscrowTransaction[] @relation("SellerEscrows")
+  escrowEvents   EscrowEvent[]
+  escrowMessages EscrowMessage[]
 
   @@map("users")
 }
@@ -70,15 +69,18 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
-model Wallet {
-  id        String   @id @default(cuid())
-  userId    String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+// PAYSTREAM demo storage. This balance is intentionally separate from the
+// ClearHold escrow journal and cannot fund or settle an escrow.
+model LegacyWallet {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  balanceCents BigInt   @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@map("wallets")
+  @@map("legacy_wallets")
 }
 
 model Transaction {
@@ -94,7 +96,6 @@ model Transaction {
 
   sender   User @relation("SenderTransactions", fields: [senderId], references: [id])
   receiver User @relation("ReceiverTransactions", fields: [receiverId], references: [id])
-  ledgerEntries LedgerEntry[]
 
   @@map("transactions")
 }
@@ -102,6 +103,16 @@ model Transaction {
 enum Role {
   CLIENT
   MERCHANT
+}
+
+enum PlatformRole {
+  USER
+  ADMIN
+}
+
+enum EscrowActorType {
+  USER
+  SYSTEM
 }
 
 enum TransactionType {
@@ -123,88 +134,152 @@ enum EntryType {
   CREDIT
 }
 
-enum BalanceBucket {
-  AVAILABLE
-  HELD
+enum LedgerAccountKind {
+  USER_AVAILABLE
+  USER_HELD
+  PLATFORM_FEE
+  SYSTEM_ISSUANCE
+  SYSTEM_MIGRATION
+}
+
+enum JournalKind {
+  INITIAL_FUNDING
+  ESCROW_RESERVE
+  ESCROW_RELEASE
+  ESCROW_REFUND
+  ESCROW_PARTIAL_REFUND
+  MIGRATION
+}
+
+enum JournalStatus {
+  PENDING
+  POSTED
 }
 
 enum EscrowStatus {
-  CREATED
   AWAITING_CREDENTIALS
   VERIFICATION_WINDOW
   DISPUTED
-  FROZEN
   RELEASED
   AUTO_RELEASED
   REFUNDED
   PARTIAL_REFUND
 }
 
+model LedgerAccount {
+  id           String            @id @default(cuid())
+  code         String            @unique
+  ownerId      String?
+  kind         LedgerAccountKind
+  currency     String            @default("USD")
+  balanceCents BigInt            @default(0)
+  createdAt    DateTime          @default(now())
+
+  owner   User?         @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  entries LedgerEntry[]
+
+  @@unique([ownerId, kind, currency])
+  @@map("ledger_accounts")
+}
+
+model JournalTransaction {
+  id             String        @id @default(cuid())
+  idempotencyKey String        @unique
+  kind           JournalKind
+  status         JournalStatus @default(PENDING)
+  escrowId       String?
+  createdAt      DateTime      @default(now())
+  postedAt       DateTime?
+
+  escrow  EscrowTransaction? @relation(fields: [escrowId], references: [id], onDelete: Restrict)
+  entries LedgerEntry[]
+
+  @@index([escrowId, createdAt])
+  @@map("journal_transactions")
+}
+
+// A command and its response commit in the same transaction as its business
+// effects. Financial command keys are intentionally retained without a TTL.
+model IdempotencyRecord {
+  id             String   @id @default(uuid())
+  principalId    String
+  method         String
+  path           String
+  key            String
+  requestHash    String
+  responseStatus Int
+  responseBody   Json
+  createdAt      DateTime @default(now())
+
+  @@unique([principalId, method, path, key], map: "idempotency_records_principal_method_path_key")
+  @@index([createdAt], map: "idempotency_records_created_at_idx")
+  @@map("idempotency_records")
+}
+
 model LedgerEntry {
-  id              String   @id @default(cuid())
-  escrowId        String?  
-  transactionId   String?
-  accountId       String   
-  entryType       EntryType
-  amountCents     BigInt
-  balanceBucket   BalanceBucket
-  reason          String
-  idempotencyKey  String   @unique
-  createdAt       DateTime @default(now())
+  id                   String    @id @default(cuid())
+  journalTransactionId String
+  accountId            String
+  entryType            EntryType
+  amountCents          BigInt
+  createdAt            DateTime  @default(now())
 
-  account         User     @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  escrow          EscrowTransaction? @relation(fields: [escrowId], references: [id])
-  transaction     Transaction? @relation(fields: [transactionId], references: [id])
+  journalTransaction JournalTransaction @relation(fields: [journalTransactionId], references: [id], onDelete: Restrict)
+  account            LedgerAccount      @relation(fields: [accountId], references: [id], onDelete: Restrict)
 
+  @@index([accountId, createdAt])
+  @@index([journalTransactionId])
   @@map("ledger_entries")
 }
 
 model EscrowTransaction {
-  id                   String   @id @default(cuid())
+  id                   String       @id @default(cuid())
   title                String
   priceCents           BigInt
   buyerId              String
   sellerId             String
-  status               EscrowStatus @default(CREATED)
-  createdAt            DateTime @default(now())
+  status               EscrowStatus @default(AWAITING_CREDENTIALS)
+  createdAt            DateTime     @default(now())
+  submissionDeadline   DateTime
   verificationDeadline DateTime?
-  wrappedCredentialKey String?  @db.Text
-  encryptedCredentials String?  @db.Text
-  version              Int      @default(0)
+  wrappedCredentialKey String?      @db.Text
+  encryptedCredentials String?      @db.Text
+  version              Int          @default(0)
 
-  buyer                User     @relation("BuyerEscrows", fields: [buyerId], references: [id])
-  seller               User     @relation("SellerEscrows", fields: [sellerId], references: [id])
-  ledgerEntries        LedgerEntry[]
-  events               EscrowEvent[]
-  messages             EscrowMessage[]
+  buyer               User                 @relation("BuyerEscrows", fields: [buyerId], references: [id])
+  seller              User                 @relation("SellerEscrows", fields: [sellerId], references: [id])
+  journalTransactions JournalTransaction[]
+  events              EscrowEvent[]
+  messages            EscrowMessage[]
 
   @@map("escrow_transactions")
 }
 
 model EscrowEvent {
-  id          String   @id @default(cuid())
-  escrowId    String
-  type        String
-  actorId     String
-  metadata    Json?
-  createdAt   DateTime @default(now())
+  id        String          @id @default(cuid())
+  escrowId  String
+  type      String
+  actorType EscrowActorType @default(USER)
+  actorId   String?
+  metadata  Json?
+  createdAt DateTime        @default(now())
 
-  escrow      EscrowTransaction @relation(fields: [escrowId], references: [id], onDelete: Cascade)
-  actor       User              @relation(fields: [actorId], references: [id])
+  escrow EscrowTransaction @relation(fields: [escrowId], references: [id], onDelete: Cascade)
+  actor  User?             @relation(fields: [actorId], references: [id], onDelete: Restrict)
 
   @@map("escrow_events")
 }
 
 model EscrowMessage {
-  id          String   @id @default(cuid())
-  escrowId    String
-  senderId    String
+  id        String   @id @default(cuid())
+  escrowId  String
+  senderId  String
   // Encrypted at rest (server-side, not E2E)
-  content     String   @db.Text 
-  createdAt   DateTime @default(now())
+  content   String   @db.Text
+  createdAt DateTime @default(now())
 
-  escrow      EscrowTransaction @relation(fields: [escrowId], references: [id], onDelete: Cascade)
-  sender      User              @relation(fields: [senderId], references: [id])
+  escrow EscrowTransaction @relation(fields: [escrowId], references: [id], onDelete: Cascade)
+  sender User              @relation(fields: [senderId], references: [id])
 
   @@map("escrow_messages")
 }

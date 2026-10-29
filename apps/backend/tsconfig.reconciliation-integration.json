@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "target": "ES2022", "module": "CommonJS", "moduleResolution": "Node", "esModuleInterop": true,
+    "strict": true, "skipLibCheck": true, "noEmit": false, "incremental": false,
+    "rootDir": ".", "outDir": ".reconciliation-test-dist", "types": ["node"]
+  },
+  "include": ["src/lib/ledger-policy.ts", "src/lib/ledger.ts", "src/lib/escrow-state-policy.ts", "src/lib/escrow-state-machine.ts", "src/lib/reconcile-escrows.ts", "tests/reconciliation-postgres.test.ts"]
+}

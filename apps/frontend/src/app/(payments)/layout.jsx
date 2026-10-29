@@ -1,19 +1,16 @@
-import { Inter } from 'next/font/google'
 import './globals.css'
 import { Providers } from '@/components/Providers'
 import { Toaster } from 'react-hot-toast'
 
-const inter = Inter({ subsets: ['latin'] })
-
 export const metadata = {
-  title: 'PAYSTREAM - Your Money, Simplified. Instantly.',
-  description: 'Experience seamless digital payments with bank-level security and instant transfers. Send money, track spending, and manage your finances effortlessly.',
+  title: 'PAYSTREAM | ClearHold legacy demo',
+  description: 'A preserved historical payment demo, isolated from ClearHold escrow balances and workflows.',
 }
 
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <body className={inter.className}>
+      <body>
         <Providers>
           {/* Floating Bubbles Layer */}
           <div className="bubble-layer">

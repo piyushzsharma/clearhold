@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "esModuleInterop": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": false,
+    "incremental": false,
+    "rootDir": ".",
+    "outDir": ".state-test-dist",
+    "types": ["node"]
+  },
+  "include": [
+    "src/lib/escrow-state-policy.ts",
+    "src/lib/escrow-state-machine.ts",
+    "src/lib/crypto.ts",
+    "tests/escrow-state-machine-postgres.test.ts"
+  ]
+}

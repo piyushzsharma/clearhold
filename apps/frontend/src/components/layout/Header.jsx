@@ -3,7 +3,7 @@
 import { useSession, signOut } from 'next-auth/react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/Button'
-import { LogOut, User, Wallet } from 'lucide-react'
+import { LogOut, User, Wallet, ShieldCheck } from 'lucide-react'
 
 export function Header() {
   const { data: session } = useSession()
@@ -17,26 +17,26 @@ export function Header() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           <div className="flex items-center">
-            <Link href={session?.user?.role === 'MERCHANT' ? '/merchant' : '/dashboard'} className="flex items-center space-x-2">
+            <Link href={session?.user?.role === 'MERCHANT' ? '/legacy/merchant' : '/legacy'} className="flex items-center space-x-2">
               <Wallet className="h-8 w-8 text-slate-700" />
-              <span className="text-xl font-bold text-slate-800">PAYSTREAM</span>
+              <span className="text-xl font-bold text-slate-800">PAYSTREAM <small className="text-xs font-medium">Legacy demo</small></span>
             </Link>
           </div>
 
           <nav className="hidden md:flex space-x-2">
             {session?.user?.role === 'MERCHANT' ? (
-              <Link href="/merchant" className="glass-button px-4 py-2 rounded-xl text-slate-700 text-sm font-medium">
+              <Link href="/legacy/merchant" className="glass-button px-4 py-2 rounded-xl text-slate-700 text-sm font-medium">
                 Merchant Dashboard
               </Link>
             ) : (
               <>
-                <Link href="/dashboard" className="glass-button px-4 py-2 rounded-xl text-slate-700 text-sm font-medium">
+                <Link href="/legacy" className="glass-button px-4 py-2 rounded-xl text-slate-700 text-sm font-medium">
                   Dashboard
                 </Link>
-                <Link href="/dashboard/transfer" className="glass-button px-4 py-2 rounded-xl text-slate-700 text-sm font-medium">
+                <Link href="/legacy/transfer" className="glass-button px-4 py-2 rounded-xl text-slate-700 text-sm font-medium">
                   Transfer
                 </Link>
-                <Link href="/dashboard/history" className="glass-button px-4 py-2 rounded-xl text-slate-700 text-sm font-medium">
+                <Link href="/legacy/history" className="glass-button px-4 py-2 rounded-xl text-slate-700 text-sm font-medium">
                   History
                 </Link>
               </>
@@ -44,6 +44,9 @@ export function Header() {
           </nav>
 
           <div className="flex items-center space-x-4">
+            <Link href="/escrow" className="glass-button px-3 py-2 rounded-xl text-slate-700 text-sm font-medium flex items-center">
+              <ShieldCheck className="h-4 w-4 mr-2" /> ClearHold Escrow
+            </Link>
             {session?.user ? (
               <>
                 <div className="flex items-center space-x-2 glass-button px-4 py-2 rounded-xl">

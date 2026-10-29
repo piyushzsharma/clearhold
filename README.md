@@ -1,193 +1,132 @@
-<div align="center">
+# ClearHold
 
-# 🔒 ClearHold
+ClearHold is an engineering project for a secure escrow platform for peer-to-peer digital-asset trades. The repository is being rebuilt around explicit state transitions, balanced financial journals, durable retries, strict authorization, and testable failure recovery.
 
-### Trust-verified escrow for high-risk P2P digital asset trading
+The current product uses **simulated USD balances**. It does not integrate with a bank, card processor, blockchain, or custody provider, and it must not be represented as moving real customer funds.
 
-*An automated, state-machine-driven middleman that holds funds until credentials are verified — so nobody has to trust a stranger on the internet.*
+## Current development status
 
-[![Next.js](https://img.shields.io/badge/Next.js-14-black?style=flat-square&logo=next.js)](https://nextjs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Ledger-4169E1?style=flat-square&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Prisma](https://img.shields.io/badge/Prisma-ORM-2D3748?style=flat-square&logo=prisma)](https://www.prisma.io/)
-[![Inngest](https://img.shields.io/badge/Inngest-Durable%20Workflows-blueviolet?style=flat-square)](https://www.inngest.com/)
-[![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](./LICENSE)
+The repository contains two products:
 
-[Overview](#-overview) • [Features](#-features) • [Architecture](#-architecture) • [Tech Stack](#-tech-stack) • [Getting Started](#-getting-started) • [Roadmap](#-roadmap)
+- The primary ClearHold escrow experience under `/escrow`.
+- A legacy PAYSTREAM payment demo under `/legacy`.
 
-</div>
+They share neutral authentication only. PAYSTREAM now has namespaced UI/API routes and its own mutable demo balances; it cannot modify the ClearHold escrow ledger. See [Legacy payment boundary](docs/legacy-payment-boundary.md).
 
----
+Identity, privilege boundaries, legacy isolation, the balanced append-only financial journal, the centralized escrow state machine, durable request idempotency, the credential vault, and a database-deadline recovery worker are implemented. All four PostgreSQL integration suites pass locally. A real HTTP smoke test has passed for registration, login, escrow creation, credential delivery, release, dispute, and admin refund. See [Project scope](docs/project-scope.md), [Financial journal](docs/financial-journal.md), [Escrow state machine](docs/escrow-state-machine.md), [Durable request idempotency](docs/durable-idempotency.md), [Credential vault](docs/credential-vault.md), and [Deadline recovery](docs/recovery.md).
 
-## 📖 Overview
+The Docker Compose stack was built and launched on Docker Desktop on 21 October 2026. All eight migrations applied, the database/backend/frontend health checks passed, the worker completed a deadline sweep, and the buyer/seller/admin HTTP smoke test passed through `http://localhost:8080`. This verifies a **local simulated-money deployment**, not an internet-facing or real-money production launch. The CI workflow has not yet run on GitHub. See [Deployment](docs/deployment.md).
 
-Peer-to-peer trading of digital assets — gaming accounts, social media handles, in-game items — happens today through manual, trust-based middlemen: a random Discord user, a subreddit "verified trader," or nothing at all. This produces predictable fraud: sellers who take payment and vanish, buyers who reject valid goods to extract refunds, and account "take-backs" after a sale completes.
+## Repository layout
 
-**ClearHold replaces the human middleman with an auditable, cryptographically-secured state machine.** Buyer funds are locked in an isolated ledger state, released only after seller-provided credentials are verified — or resolved by an admin when the automated flow can't settle a disagreement on its own.
-
-This isn't a wallet app with an escrow feature bolted on. It's a settlement engine, built the way real payment infrastructure is built: immutable ledgers instead of mutable balances, durable scheduling instead of best-effort timers, and every fund movement traceable back to a single auditable event.
-
----
-
-## ✨ Features
-
-| | |
-|---|---|
-| 🔁 **Explicit state machine** | Every escrow moves through a strict, guarded transition table — no ad-hoc status updates, no invalid state jumps. |
-| 💰 **Immutable double-entry ledger** | Balances are never `UPDATE`d — they're derived from an append-only ledger of debit/credit pairs, fully auditable and provably balanced. |
-| ⏱️ **Durable auto-release** | A 24-hour verification window enforced via durable workflow scheduling (Inngest) with a `pg_cron` reconciliation fallback — survives crashes, deploys, and process restarts. |
-| 🔐 **Envelope-encrypted credential vault** | Seller credentials are encrypted with per-transaction data keys (AES-256-GCM), cryptographically shredded and unrecoverable once a transaction resolves. |
-| ⚖️ **Admin dispute resolution** | Full transaction timeline, encrypted chat log review, and manual release/refund/partial-refund with mandatory audit logging. |
-| 🔒 **Concurrency-safe by design** | Advisory-locked transactions and idempotency keys eliminate double-release and double-spend under concurrent access — tested, not assumed. |
-
----
-
-## 🏗️ Architecture
-
-```mermaid
-flowchart LR
-    subgraph Client
-        Web[apps/web<br/>Buyer & Seller UI]
-        Admin[apps/admin<br/>Dispute Dashboard]
-    end
-
-    subgraph Core["packages/ledger — Domain Logic"]
-        FSM[Escrow State Machine]
-        Ledger[Ledger Service]
-        Vault[Credential Vault Service]
-    end
-
-    subgraph Infra
-        PG[(PostgreSQL<br/>Ledger + Events)]
-        Redis[(Redis<br/>Queues + Rate Limits)]
-        Inngest[Inngest<br/>Durable Scheduling]
-    end
-
-    Web --> FSM
-    Admin --> FSM
-    FSM --> Ledger --> PG
-    FSM --> Vault --> PG
-    FSM --> Inngest
-    FSM --> Redis
+```text
+apps/frontend   Next.js user interface on port 3000
+apps/backend    Next.js API, NextAuth, Prisma, and Inngest endpoint on port 3001
+docs            Product scope and engineering decisions
 ```
 
-### State Machine
+The browser sends same-origin `/api` requests to the frontend. The frontend proxies those requests to the backend using `BACKEND_URL`.
 
-```mermaid
-stateDiagram-v2
-    [*] --> CREATED
-    CREATED --> AWAITING_CREDENTIALS
-    AWAITING_CREDENTIALS --> VERIFICATION_WINDOW
-    VERIFICATION_WINDOW --> RELEASED: buyer confirms
-    VERIFICATION_WINDOW --> AUTO_RELEASED: 24h elapses
-    VERIFICATION_WINDOW --> DISPUTED: buyer rejects
-    DISPUTED --> RELEASED: admin rules
-    DISPUTED --> REFUNDED: admin rules
-    DISPUTED --> PARTIAL_REFUND: admin rules
-    RELEASED --> [*]
-    AUTO_RELEASED --> [*]
-    REFUNDED --> [*]
-    PARTIAL_REFUND --> [*]
+## Local prerequisites
+
+- Node.js 20.9 through 24
+- npm 11
+- PostgreSQL 14 or newer
+- Redis and the Inngest Dev Server only if exploring the optional event integration; the deployment worker does not require them
+
+## Local setup
+
+1. Install the pinned dependency graph.
+
+   ```bash
+   npm ci
+   ```
+
+2. Copy `apps/backend/.env.example` to `apps/backend/.env` and `apps/frontend/.env.local.example` to `apps/frontend/.env.local`.
+
+3. Generate strong local secrets. `MASTER_KEY` and `IDEMPOTENCY_HASH_KEY` each require a different 32-byte key encoded as exactly 64 hexadecimal characters.
+
+4. Create the database and apply tracked migrations.
+
+   ```bash
+   npm run db:generate
+   npm run db:migrate
+   npm run db:seed
+   ```
+
+5. Start the applications.
+
+   ```bash
+   npm run dev
+   ```
+
+The frontend runs at `http://localhost:3000`; the backend runs at `http://localhost:3001`.
+
+### This Windows workspace's local database
+
+This workspace has a separate PostgreSQL 17 cluster in ignored `.local-postgres/`, listening only on `127.0.0.1:55432`. Its generated password and the backend/frontend local environment files are ignored by Git. It does not use the installed PostgreSQL service's data directory. After a reboot, run this from the repository root before starting the apps:
+
+```powershell
+.\scripts\local-db.ps1 start
+npm run db:migrate:deploy
 ```
 
-Every transition — automated or admin-triggered — passes through a single guarded function. No API route, worker, or admin action writes `status` directly.
+Use `.\scripts\local-db.ps1 status` to check it and `.\scripts\local-db.ps1 stop` when finished. The helper expects PostgreSQL 17 in `C:\Program Files\PostgreSQL\17\bin`. To verify the database behavior from a fresh PowerShell session, load `DATABASE_URL` from `apps/backend/.env` and run the three integration commands below. Never commit the generated `.env` files or `.local-postgres/`.
 
----
+The seed creates clearly labelled local-only accounts. All use the password `ClearHoldDemo123!`:
 
-## 🧰 Tech Stack
+- `buyer@clearhold.local`
+- `seller@clearhold.local`
+- `legacy-client@clearhold.local`
+- `legacy-merchant@clearhold.local`
+- `admin@clearhold.local` — administrator principal without a trading wallet
 
-| Layer | Technology |
-|---|---|
-| Monorepo | Turborepo |
-| Frontend | Next.js 14 (App Router), React 18, Tailwind CSS, shadcn/ui |
-| Backend | Next.js API Routes, Prisma ORM, PostgreSQL |
-| Durable Scheduling | Inngest, `pg_cron` (reconciliation fallback) |
-| Queues & Caching | Redis, BullMQ |
-| Cryptography | AES-256-GCM envelope encryption, RSA key wrapping |
-| Auth | NextAuth.js |
-| Observability | OpenTelemetry, Sentry, Pino (structured logs) |
-| CI/CD | GitHub Actions, Docker |
+The buyer receives simulated seed funds through a balanced journal entry against the system issuance account.
 
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-- Node.js 18+
-- PostgreSQL 14+
-- Redis
-- An [Inngest](https://www.inngest.com/) account (free tier works for local dev)
-
-### Installation
+## Verification commands
 
 ```bash
-git clone https://github.com/<your-username>/clearhold.git
-cd clearhold
-npm install
+npm run db:validate
+npm run type-check
+npm run lint
+npm run build
 ```
 
-### Environment Setup
+`npm run verify` runs schema validation, linting, type checking, unit tests, and both application builds. A running migrated PostgreSQL database is required for the separate `test:db:ledger`, `test:db:state`, `test:db:idempotency`, and `test:db:reconciliation` integration commands.
 
-Create a `.env` file in the project root:
-
-```env
-DATABASE_URL="postgresql://user:password@localhost:5432/clearhold"
-REDIS_URL="redis://localhost:6379"
-NEXTAUTH_SECRET="your-nextauth-secret"
-MASTER_ENCRYPTION_KEY="your-32-byte-key"
-INNGEST_EVENT_KEY="your-inngest-event-key"
-INNGEST_SIGNING_KEY="your-inngest-signing-key"
+```powershell
+$env:DATABASE_URL = (Get-Content apps/backend/.env | Where-Object { $_ -match '^DATABASE_URL=' } | Select-Object -First 1).Substring(13).Trim('"')
+npm run test:db:ledger --workspace=backend
+npm run test:db:state --workspace=backend
+npm run test:db:idempotency --workspace=backend
+npm run test:db:reconciliation --workspace=backend
 ```
 
-### Database Setup
+The pinned lockfile currently has known dependency advisories. The October 2026 `npm audit --omit=dev` check reports five findings in the Prisma CLI configuration path and Next.js's bundled PostCSS version; npm proposes major framework/version-line changes for them. The full development tree reports fourteen findings. See [Deployment](docs/deployment.md) for the limited synthetic-data demo scope and remaining upgrade work.
 
-```bash
-npx prisma migrate dev
-npx prisma db seed   # optional: seed sample escrow data
-```
+## Engineering principles
 
-### Run Locally
+- PostgreSQL is the source of truth for escrow state and financial records.
+- Financial correctness is expressed as explicit, database-enforced invariants.
+- Retried commands may execute more than once but must produce one durable business effect.
+- Scheduled work is derived from persisted deadlines and reconciled after failures.
+- Credential encryption uses authenticated encryption and a documented key lifecycle.
+- Legacy demo behavior may share neutral identity code, but not escrow financial state or domain services.
+- Claims in documentation and resumes must be traceable to code, tests, and measured evidence.
 
-```bash
-npm run dev
-```
+## Planned phase order
 
-The app will be available at `http://localhost:3000`. The admin dashboard runs at `http://localhost:3000/admin` (requires an account with the `admin` role).
+1. Reproducible baseline and explicit scope — complete
+2. Identity and privilege boundaries — complete
+3. Legacy payment isolation — complete
+4. Balanced immutable financial journal — complete; PostgreSQL integration suite passed locally
+5. Central escrow state machine — complete; PostgreSQL integration suite passed locally
+6. Durable request idempotency — complete; PostgreSQL integration suite passed locally
+7. Credential-vault hardening — complete in code; local cryptography tests passed
+8. Core frontend/API flows — HTTP smoke test passed; browser UX still needs review
+9. Durable scheduling and recovery — deadline worker and concurrent PostgreSQL test passed
+10. Observability and operational recovery — basic health and worker logs; alerting/restore drill pending
+11. Containers and CI — local Docker Desktop launch and product smoke passed; GitHub CI run pending
+12. Evidence, benchmarks, and resume review
 
-### Run Tests
-
-```bash
-npm run test              # unit + integration tests
-npm run test:concurrency  # concurrency/race-condition test suite
-```
-
----
-
-## 🗺️ Roadmap
-
-- [x] Immutable double-entry ledger
-- [x] Explicit escrow state machine
-- [x] Durable auto-release scheduling
-- [x] Envelope-encrypted credential vault
-- [x] Admin dispute resolution dashboard
-- [ ] Circuit breakers for external dependency calls
-- [ ] CQRS read-path with Redis-cached balance projections
-- [ ] Transactional outbox pattern for notification delivery
-- [ ] Distributed tracing across the full escrow lifecycle
-- [ ] Ledger table partitioning for long-term scale
-
----
-
-## 🤝 Contributing
-
-Contributions, issues, and feature requests are welcome. Feel free to check the [issues page](../../issues) or open a PR.
-
-## 📄 License
-
-Distributed under the MIT License. See `LICENSE` for details.
-
----
-
-<div align="center">
-Built with a focus on financial correctness, not just feature completeness.
-</div>
+Each phase is reviewed through **Learn → Design → Implement → Test → Interview** before the next phase begins.

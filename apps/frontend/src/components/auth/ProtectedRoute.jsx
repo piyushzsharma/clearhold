@@ -16,8 +16,13 @@ export function ProtectedRoute({ children, requiredRole }) {
       return
     }
 
+    if (session.user.platformRole !== 'USER') {
+      router.push('/admin/disputes')
+      return
+    }
+
     if (requiredRole && session.user.role !== requiredRole) {
-      router.push(session.user.role === 'MERCHANT' ? '/merchant' : '/dashboard')
+      router.push(session.user.role === 'MERCHANT' ? '/legacy/merchant' : '/legacy')
       return
     }
   }, [session, status, router, requiredRole])
@@ -34,7 +39,7 @@ export function ProtectedRoute({ children, requiredRole }) {
     return null
   }
 
-  if (requiredRole && session.user.role !== requiredRole) {
+  if (session.user.platformRole !== 'USER' || (requiredRole && session.user.role !== requiredRole)) {
     return null
   }
 

@@ -1,24 +1,19 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { withAuthorization } from '@/lib/authorization';
+import type { Principal } from '@/lib/authorization-policy';
 
-export async function GET(req: Request) {
+async function handler(req: Request, _context: unknown, principal: Principal) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
     const { searchParams } = new URL(req.url);
     const cursor = searchParams.get('cursor');
-    const limit = parseInt(searchParams.get('limit') || '20');
+    const limit = Math.min(Math.max(parseInt(searchParams.get('limit') || '20'), 1), 100);
 
-    const escrows = await prisma.escrow.findMany({
+    const escrows = await prisma.escrowTransaction.findMany({
       where: {
         OR: [
-          { buyerId: session.user.id },
-          { sellerId: session.user.id }
+          { buyerId: principal.id },
+          { sellerId: principal.id }
         ]
       },
       take: limit + 1,
@@ -55,3 +50,5 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
+
+export const GET = withAuthorization(handler, { platformRoles: ['USER'] });

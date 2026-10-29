@@ -14,7 +14,7 @@ import toast from 'react-hot-toast'
 
 const signInSchema = z.object({
   email: z.string().email('Invalid email address'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
+  password: z.string().min(12, 'Password must be at least 12 characters'),
 })
 
 export default function SignInPage() {
@@ -44,10 +44,12 @@ export default function SignInPage() {
         const session = await getSession()
         toast.success('Signed in successfully!')
         
-        if (session?.user?.role === 'MERCHANT') {
-          router.push('/merchant')
+        if (session?.user?.platformRole === 'ADMIN') {
+          router.push('/admin/disputes')
+        } else if (session?.user?.role === 'MERCHANT') {
+          router.push('/legacy/merchant')
         } else {
-          router.push('/dashboard')
+          router.push('/escrow')
         }
       }
     } catch (error) {
@@ -60,7 +62,7 @@ export default function SignInPage() {
   const handleGoogleSignIn = async () => {
     setLoading(true)
     try {
-      await signIn('google', { callbackUrl: '/dashboard' })
+      await signIn('google', { callbackUrl: '/escrow' })
     } catch (error) {
       toast.error('Google sign in failed')
     } finally {
@@ -143,7 +145,7 @@ export default function SignInPage() {
                 {loading ? 'Signing in...' : 'Sign in'}
               </button>
 
-              <div className="relative">
+              {process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED === 'true' && <><div className="relative">
                 <div className="absolute inset-0 flex items-center">
                   <div className="w-full border-t border-slate-300/50" />
                 </div>
@@ -165,7 +167,7 @@ export default function SignInPage() {
                   <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
                 </svg>
                 Sign in with Google
-              </button>
+              </button></>}
             </form>
           </CardContent>
         </Card>

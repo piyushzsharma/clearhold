@@ -1,10 +1,14 @@
 import { inngest } from '@/lib/inngest';
 import { prisma } from '@/lib/db';
 import { refundEscrowFunds } from '@/lib/ledger';
+import { lockEscrow, transitionEscrow } from '@/lib/escrow-state-machine';
 
 export const escrowTimeoutRefund = inngest.createFunction(
-  { id: 'escrow-timeout-refund', name: 'Escrow Timeout Refund' },
-  { event: 'escrow/created' },
+  {
+    id: 'escrow-timeout-refund',
+    name: 'Escrow Timeout Refund',
+    triggers: { event: 'escrow/created' },
+  },
   async ({ event, step }) => {
     const { escrowId } = event.data;
 
@@ -14,13 +18,7 @@ export const escrowTimeoutRefund = inngest.createFunction(
     // After 48 hours, check if it's still in AWAITING_CREDENTIALS state
     await step.run('attempt-timeout-refund', async () => {
       await prisma.$transaction(async (tx) => {
-        // Lock row
-        const escrowRows = await tx.$queryRaw`
-          SELECT status, "buyerId", "priceCents" FROM escrow_transactions WHERE id = ${escrowId} FOR UPDATE
-        `;
-        
-        if (!escrowRows || escrowRows.length === 0) return;
-        const escrow = escrowRows[0];
+        const escrow = await lockEscrow(tx, escrowId);
 
         // If not in AWAITING_CREDENTIALS, they submitted credentials or it was cancelled
         if (escrow.status !== 'AWAITING_CREDENTIALS') {
@@ -35,21 +33,11 @@ export const escrowTimeoutRefund = inngest.createFunction(
           idempotencyKeyPrefix: `inngest_timeout_refund:${escrowId}`,
         });
 
-        // Update status
-        await tx.escrowTransaction.update({
-          where: { id: escrowId },
-          data: {
-            status: 'CANCELLED',
-          }
-        });
-
-        // Log event
-        await tx.escrowEvent.create({
-          data: {
-            escrowId,
-            type: 'TimeoutRefunded',
-            actorId: 'SYSTEM',
-          }
+        await transitionEscrow(tx, {
+          escrow,
+          transition: 'TIMEOUT_REFUND',
+          actor: { type: 'SYSTEM' },
+          metadata: { source: 'inngest' },
         });
 
         return { refunded: true };

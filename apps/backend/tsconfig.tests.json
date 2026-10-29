@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "esModuleInterop": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": false,
+    "incremental": false,
+    "rootDir": "src/lib",
+    "outDir": ".test-dist",
+    "types": ["node"]
+  },
+  "include": [
+    "src/lib/authorization-policy.ts",
+    "src/lib/authorization-policy.test.ts",
+    "src/lib/legacy-boundary.test.ts",
+    "src/lib/ledger-policy.ts",
+    "src/lib/ledger-policy.test.ts",
+    "src/lib/escrow-state-policy.ts",
+    "src/lib/escrow-state-policy.test.ts",
+    "src/lib/idempotency-policy.ts",
+    "src/lib/idempotency-policy.test.ts",
+    "src/lib/crypto.ts",
+    "src/lib/crypto.test.ts",
+    "src/lib/registration.ts",
+    "src/lib/registration.test.ts",
+    "src/lib/login-rate-limit.ts",
+    "src/lib/login-rate-limit.test.ts"
+  ]
+}

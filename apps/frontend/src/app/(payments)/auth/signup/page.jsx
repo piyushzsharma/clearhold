@@ -15,7 +15,7 @@ import { signIn } from 'next-auth/react'
 const signUpSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
   email: z.string().email('Invalid email address'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
+  password: z.string().min(12, 'Password must be at least 12 characters'),
   confirmPassword: z.string(),
   role: z.enum(['CLIENT', 'MERCHANT']),
 }).refine((data) => data.password === data.confirmPassword, {
@@ -67,9 +67,9 @@ export default function SignUpPage() {
 
         if (result?.ok) {
           if (data.role === 'MERCHANT') {
-            router.push('/merchant')
+            router.push('/legacy/merchant')
           } else {
-            router.push('/dashboard')
+            router.push('/escrow')
           }
         }
       } else {
@@ -86,7 +86,7 @@ export default function SignUpPage() {
   const handleGoogleSignUp = async () => {
     setLoading(true)
     try {
-      await signIn('google', { callbackUrl: '/dashboard' })
+      await signIn('google', { callbackUrl: '/escrow' })
     } catch (error) {
       toast.error('Google sign up failed')
     } finally {
@@ -215,7 +215,7 @@ export default function SignUpPage() {
                 {loading ? 'Creating account...' : 'Create account'}
               </button>
 
-              <div className="relative">
+              {process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED === 'true' && <><div className="relative">
                 <div className="absolute inset-0 flex items-center">
                   <div className="w-full border-t border-slate-300/50" />
                 </div>
@@ -237,7 +237,7 @@ export default function SignUpPage() {
                   <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
                 </svg>
                 Sign up with Google
-              </button>
+              </button></>}
             </form>
           </CardContent>
         </Card>
